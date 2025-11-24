@@ -193,10 +193,10 @@ app.get('/api/verify-payment', async (req, res) => {
       }
 
       // Create Shopify Order
-      let orderId = null;
+      let orderData = null;
       if (SHOPIFY_ACCESS_TOKEN && callbackData.variantId) {
         try {
-          orderId = await createShopifyOrder(data.Data, callbackData);
+          orderData = await createShopifyOrder(data.Data, callbackData);
         } catch (orderError) {
           console.error('Failed to create Shopify order:', orderError);
         }
@@ -207,7 +207,9 @@ app.get('/api/verify-payment', async (req, res) => {
         status: 'paid',
         amount: data.Data.InvoiceValue,
         currency: data.Data.Currency,
-        orderId: orderId,
+        orderId: orderData?.id || null,
+        orderNumber: orderData?.order_number || null,
+        orderUrl: orderData?.order_status_url || null,
         invoiceId: data.Data.InvoiceId,
         transactionId: data.Data.InvoiceTransactions[0]?.TransactionId
       });
@@ -306,7 +308,11 @@ async function createShopifyOrder(paymentData, callbackData) {
     
     if (result.order) {
       console.log('✅ Shopify Order Created:', result.order.id);
-      return result.order.id;
+      return {
+        id: result.order.id,
+        order_number: result.order.order_number,
+        order_status_url: result.order.order_status_url
+      };
     } else {
       console.error('❌ Failed to create Shopify order:', result);
       return null;
