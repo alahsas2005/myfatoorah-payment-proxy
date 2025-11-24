@@ -237,9 +237,30 @@ app.get('/api/verify-payment', async (req, res) => {
 // Create Shopify Order
 async function createShopifyOrder(paymentData, callbackData) {
   try {
+    const customerEmail = callbackData.customerEmail || paymentData.CustomerEmail;
+    
+    // Search for existing customer by email
+    let customerId = null;
+    try {
+      const searchResponse = await fetch(`https://${SHOPIFY_STORE}/admin/api/${SHOPIFY_API_VERSION}/customers/search.json?query=email:${encodeURIComponent(customerEmail)}`, {
+        method: 'GET',
+        headers: {
+          'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN,
+          'Content-Type': 'application/json'
+        }
+      });
+      const searchResult = await searchResponse.json();
+      if (searchResult.customers && searchResult.customers.length > 0) {
+        customerId = searchResult.customers[0].id;
+        console.log('✅ Found existing customer:', customerId);
+      }
+    } catch (searchError) {
+      console.log('⚠️ Customer search failed, will create new:', searchError.message);
+    }
+
     const orderData = {
       order: {
-        email: callbackData.customerEmail || paymentData.CustomerEmail,
+        email: customerEmail,
         financial_status: 'paid',
         send_receipt: true,
         send_fulfillment_receipt: true,
@@ -249,10 +270,6 @@ async function createShopifyOrder(paymentData, callbackData) {
             quantity: callbackData.quantity || 1
           }
         ],
-        customer: {
-          email: callbackData.customerEmail || paymentData.CustomerEmail,
-          phone: callbackData.customerPhone
-        },
         transactions: [
           {
             kind: 'sale',
@@ -266,6 +283,16 @@ async function createShopifyOrder(paymentData, callbackData) {
         tags: 'myfatoorah, express-checkout'
       }
     };
+    
+    // Add customer_id if found, otherwise add customer object
+    if (customerId) {
+      orderData.order.customer = { id: customerId };
+    } else if (callbackData.customerPhone) {
+      orderData.order.customer = {
+        email: customerEmail,
+        phone: callbackData.customerPhone
+      };
+    }
 
     const response = await fetch(`https://${SHOPIFY_STORE}/admin/api/${SHOPIFY_API_VERSION}/orders.json`, {
       method: 'POST',
