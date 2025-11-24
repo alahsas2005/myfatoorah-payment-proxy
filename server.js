@@ -284,13 +284,12 @@ async function createShopifyOrder(paymentData, callbackData) {
       }
     };
     
-    // Add customer_id if found, otherwise add customer object
+    // Add customer_id if found, otherwise add customer email only (no phone to avoid conflicts)
     if (customerId) {
       orderData.order.customer = { id: customerId };
-    } else if (callbackData.customerPhone) {
+    } else {
       orderData.order.customer = {
-        email: customerEmail,
-        phone: callbackData.customerPhone
+        email: customerEmail
       };
     }
 
