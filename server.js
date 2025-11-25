@@ -23,7 +23,7 @@ const MYFATOORAH_API_TOKEN = process.env.MYFATOORAH_API_TOKEN || '';
 const MYFATOORAH_API_URL = 'https://api.myfatoorah.com/v2/SendPayment';
 const MYFATOORAH_GET_PAYMENT_URL = 'https://api.myfatoorah.com/v2/GetPaymentStatus';
 const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN || '';
-const SHOPIFY_API_VERSION = '2024-01';
+const SHOPIFY_API_VERSION = '2025-10';
 const SHOPIFY_STORE = process.env.SHOPIFY_STORE || 'techgamingworlds.myshopify.com';
 const VERIFICATION_PAGE_URL = `https://${SHOPIFY_STORE}/pages/payment-verification`;
 
