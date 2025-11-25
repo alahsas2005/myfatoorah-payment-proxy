@@ -324,23 +324,73 @@ async function createShopifyOrder(paymentData, callbackData) {
 }
 
 // MyFatoorah Webhook (for real-time updates)
-app.post('/api/myfatoorah-webhook', async (req, res) => {
+app.post('/api/webhook', async (req, res) => {
   try {
-    console.log('📨 MyFatoorah Webhook:', JSON.stringify(req.body, null, 2));
+    console.log('📨 MyFatoorah Webhook Received:', JSON.stringify(req.body, null, 2));
     
     // Process webhook data
-    const { Data } = req.body;
+    const { Data, EventType } = req.body;
     
-    if (Data && Data.InvoiceStatus === 'Paid') {
-      // Payment confirmed, you can trigger additional actions here
+    // Respond immediately to MyFatoorah
+    res.status(200).json({ success: true, message: 'Webhook received' });
+    
+    // Process webhook asynchronously
+    if (Data && EventType === 'TransactionStatusChanged' && Data.InvoiceStatus === 'Paid') {
       console.log('✅ Payment confirmed via webhook:', Data.InvoiceId);
+      
+      // Parse UserDefinedField to get order details
+      let callbackData = {};
+      try {
+        if (Data.UserDefinedField) {
+          callbackData = JSON.parse(Data.UserDefinedField);
+          console.log('📦 Parsed callback data:', callbackData);
+        }
+      } catch (e) {
+        console.error('❌ Failed to parse UserDefinedField:', e);
+      }
+      
+      // Create Shopify Order if we have the necessary data
+      if (SHOPIFY_ACCESS_TOKEN && callbackData.variantId) {
+        try {
+          console.log('🛍️ Creating Shopify order from webhook...');
+          const orderData = await createShopifyOrder(Data, callbackData);
+          
+          if (orderData) {
+            console.log('✅ Shopify Order Created Successfully:', {
+              orderId: orderData.id,
+              orderNumber: orderData.order_number,
+              orderUrl: orderData.order_status_url
+            });
+          } else {
+            console.error('❌ Failed to create Shopify order from webhook');
+          }
+        } catch (orderError) {
+          console.error('❌ Error creating Shopify order from webhook:', orderError);
+        }
+      } else {
+        console.warn('⚠️ Missing required data for Shopify order creation:', {
+          hasAccessToken: !!SHOPIFY_ACCESS_TOKEN,
+          hasVariantId: !!callbackData.variantId,
+          callbackData
+        });
+      }
+    } else {
+      console.log('ℹ️ Webhook event not processed:', {
+        eventType: EventType,
+        invoiceStatus: Data?.InvoiceStatus
+      });
     }
-    
-    res.status(200).json({ success: true });
   } catch (error) {
     console.error('❌ Webhook Error:', error);
-    res.status(500).json({ success: false });
+    // Don't send error response as we already responded above
   }
+});
+
+// Legacy webhook endpoint (for backward compatibility)
+app.post('/api/myfatoorah-webhook', async (req, res) => {
+  // Redirect to new endpoint
+  req.url = '/api/webhook';
+  return app._router.handle(req, res);
 });
 
 // Start server
