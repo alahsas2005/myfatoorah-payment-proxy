@@ -31,14 +31,87 @@ const VERIFICATION_PAGE_URL = `https://${SHOPIFY_STORE}/pages/payment-verificati
 app.get('/', (req, res) => {
   res.json({
     status: 'online',
-    service: 'MyFatoorah Payment Proxy - Enhanced',
-    version: '7.0-SHOPIFY-INTEGRATION',
+    service: 'MyFatoorah Payment Proxy - Ultimate Smart Button',
+    version: '8.0-DRAFT-ORDERS-TRACKING',
     endpoints: {
       createPayment: 'POST /api/create-payment',
+      createDraftOrder: 'POST /api/create-draft-order',
       verifyPayment: 'GET /api/verify-payment',
-      shopifyWebhook: 'POST /api/myfatoorah-webhook'
+      webhook: 'POST /api/webhook'
     }
   });
+});
+
+// Create Draft Order (for tracking checkout initiation)
+app.post('/api/create-draft-order', async (req, res) => {
+  try {
+    const { variantId, quantity, customerEmail, customerPhone, productTitle, price } = req.body;
+
+    console.log('📝 Creating Draft Order:', JSON.stringify(req.body, null, 2));
+
+    if (!SHOPIFY_ACCESS_TOKEN) {
+      return res.status(500).json({
+        success: false,
+        error: 'Shopify access token not configured'
+      });
+    }
+
+    // Create draft order
+    const draftOrderData = {
+      draft_order: {
+        line_items: [
+          {
+            variant_id: parseInt(variantId),
+            quantity: quantity || 1
+          }
+        ],
+        customer: {
+          email: customerEmail
+        },
+        email: customerEmail,
+        note: `MyFatoorah Express Checkout - Initiated at ${new Date().toISOString()}`,
+        tags: 'myfatoorah-draft, express-checkout-initiated',
+        use_customer_default_address: false
+      }
+    };
+
+    // Add phone if provided
+    if (customerPhone) {
+      draftOrderData.draft_order.customer.phone = customerPhone;
+    }
+
+    const response = await fetch(`https://${SHOPIFY_STORE}/admin/api/${SHOPIFY_API_VERSION}/draft_orders.json`, {
+      method: 'POST',
+      headers: {
+        'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(draftOrderData)
+    });
+
+    const result = await response.json();
+
+    if (result.draft_order) {
+      console.log('✅ Draft Order Created:', result.draft_order.id);
+      return res.json({
+        success: true,
+        draftOrderId: result.draft_order.id,
+        draftOrderName: result.draft_order.name
+      });
+    } else {
+      console.error('❌ Failed to create draft order:', result);
+      return res.status(400).json({
+        success: false,
+        error: result.errors || 'Failed to create draft order'
+      });
+    }
+  } catch (error) {
+    console.error('❌ Draft Order Error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Internal server error'
+    });
+  }
 });
 
 // Create Payment
@@ -83,7 +156,8 @@ app.post('/api/create-payment', async (req, res) => {
         quantity,
         customerEmail: finalEmail,
         customerPhone: finalPhone,
-        source: 'express_checkout'
+        source: 'express_checkout',
+        draftOrderId: draftOrderId
       })
     };
     
@@ -93,6 +167,9 @@ app.post('/api/create-payment', async (req, res) => {
     }
     
     console.log('📤 Data sent to MyFatoorah:', JSON.stringify(paymentData, null, 2));
+    
+    // Store draft order ID if provided
+    let draftOrderId = req.body.draftOrderId || null;
     
     // Call MyFatoorah API
     const response = await fetch(MYFATOORAH_API_URL, {
@@ -347,6 +424,22 @@ app.post('/api/webhook', async (req, res) => {
         }
       } catch (e) {
         console.error('❌ Failed to parse UserDefinedField:', e);
+      }
+      
+      // Delete Draft Order if exists
+      if (SHOPIFY_ACCESS_TOKEN && callbackData.draftOrderId) {
+        try {
+          console.log('🗑️ Deleting Draft Order:', callbackData.draftOrderId);
+          await fetch(`https://${SHOPIFY_STORE}/admin/api/${SHOPIFY_API_VERSION}/draft_orders/${callbackData.draftOrderId}.json`, {
+            method: 'DELETE',
+            headers: {
+              'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN
+            }
+          });
+          console.log('✅ Draft Order deleted successfully');
+        } catch (deleteError) {
+          console.error('❌ Failed to delete draft order:', deleteError);
+        }
       }
       
       // Create Shopify Order if we have the necessary data
